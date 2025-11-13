@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BantayAyuda - DSWD ECT Allocation Dashboard</title>
+    
+    <!-- Leaflet.js CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Leaflet.js JavaScript -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Chart.js for budget visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        .sidebar {
+            width: 350px;
+            background: white;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+        
+        .sidebar h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        
+        .control-group {
+            margin-bottom: 20px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #34495e;
+        }
+        
+        .control-group select,
+        .control-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 10px;
+            transition: background 0.3s;
+        }
+        
+        .btn:hover {
+            background: #2980b9;
+        }
+        
+        .btn-secondary {
+            background: #95a5a6;
+        }
+        
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+        
+        .btn-success {
+            background: #27ae60;
+        }
+        
+        .btn-success:hover {
+            background: #229954;
+        }
+        
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        
+        .legend h3 {
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #2c3e50;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        
+        .status-message {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .sms-preview {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            display: none;
+        }
+        
+        .sms-preview h4 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        
+        .sms-preview p {
+            color: #495057;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h1>🏠 BantayAyuda</h1>
+            <p style="color: #7f8c8d; margin-bottom: 20px;">DSWD ECT Allocation Dashboard</p>
+            
+            <div class="control-group">
+                <label for="disasterSelect">Select Disaster Event:</label>
+                <select id="disasterSelect">
+                    <option value="">Loading disasters...</option>
+                </select>
+            </div>
+            
+            <button class="btn" onclick="loadHouseholds()">🗺️ Load Households on Map</button>
+            
+            <button class="btn btn-success" onclick="runML()" style="margin-top: 10px; background: #e74c3c;" id="mlBtn">🤖 Run AI Assessment</button>
+            
+            <div id="sms-output" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
+                <h4 style="font-size: 14px; margin-bottom: 8px;">Sample SMS:</h4>
+                <p id="smsOutputText" style="font-size: 12px; color: #495057;"></p>
+            </div>
+            
+            <!-- Budget Summary Panel -->
+            <div id="budget-summary" style="margin-top: 20px; padding: 15px; background: #e8f5e9; border-radius: 4px; border: 1px solid #4caf50; display: none;">
+                <h4 style="font-size: 14px; margin-bottom: 10px; color: #2e7d32;">💰 Budget Summary</h4>
+                <div style="margin-bottom: 15px;">
+                    <canvas id="budgetPieChart" style="max-height: 200px;"></canvas>
+                </div>
+                <div id="budget-content" style="font-size: 12px; color: #1b5e20;">
+                    <!-- Budget data will be inserted here -->
+                </div>
+            </div>
+            
+            <!-- Export Button -->
+            <button class="btn" onclick="exportToCSV()" style="margin-top: 10px; background: #9c27b0;" id="exportBtn" disabled>📥 Export to CSV</button>
+            
+            <div class="control-group" style="margin-top: 20px;">
+                <label for="householdSelect">Select Household for SMS:</label>
+                <select id="householdSelect" disabled>
+                    <option value="">Select a household first</option>
+                </select>
+            </div>
+            
+            <button class="btn btn-success" onclick="generateSMS()" disabled id="smsBtn">📱 Generate SMS Message</button>
+            
+            <div id="statusMessage" class="status-message"></div>
+            
+            <div id="smsPreview" class="sms-preview">
+                <h4>Generated SMS:</h4>
+                <p id="smsContent"></p>
+            </div>
+            
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
+                <h3 style="font-size: 14px; color: #7f8c8d; margin-bottom: 10px;">ECT Payout Criteria:</h3>
+                <ul style="font-size: 12px; color: #495057; line-height: 1.8;">
+                    <li><strong>Total Damage:</strong> ₱10,000</li>
+                    <li><strong>Partial Damage:</strong> ₱5,000</li>
+                    <li><strong>No Damage:</strong> ₱0</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="map-container">
+            <div id="map"></div>
+            <div class="legend">
+                <h3>Damage Status</h3>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #dc3545;"></div>
+                    <span>Total Damage (₱10,000)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #fd7e14;"></div>
+                    <span>Partial Damage (₱5,000)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #28a745;"></div>
+                    <span>No Damage (₱0)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize map centered on Philippines
+        const map = L.map('map').setView([14.5995, 120.9842], 6);
+        
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        
+        let markers = [];
+        let households = [];
+        
+        // Load disasters on page load
+        async function loadDisasters() {
+            try {
+                const response = await fetch('/api/disasters/');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                const select = document.getElementById('disasterSelect');
+                select.innerHTML = '<option value="">Select a disaster...</option>';
+                
+                // Handle both paginated (results) and non-paginated responses
+                const disasters = data.results || data;
+                
+                if (disasters.length === 0) {
+                    select.innerHTML = '<option value="">No disasters available. Please add one in the admin panel.</option>';
+                    showStatus('No disasters found. Run: python manage.py seed_data', 'error');
+                    return;
+                }
+                
+                disasters.forEach(disaster => {
+                    const option = document.createElement('option');
+                    option.value = disaster.id;
+                    option.textContent = disaster.name;
+                    select.appendChild(option);
+                });
+                
+                showStatus(`Loaded ${disasters.length} disaster(s)`, 'success');
+            } catch (error) {
+                console.error('Error loading disasters:', error);
+                showStatus('Error loading disasters. Make sure the server is running and data is seeded.', 'error');
+            }
+        }
+        
+        // Load households and display on map
+        async function loadHouseholds() {
+            const disasterId = document.getElementById('disasterSelect').value;
+            
+            if (!disasterId) {
+                showStatus('Please select a disaster first', 'error');
+                return;
+            }
+            
+            try {
+                // Clear existing markers
+                markers.forEach(marker => map.removeLayer(marker));
+                markers = [];
+                
+                // Fetch GeoJSON data
+                const response = await fetch(`/api/households/geojson/?disaster_id=${disasterId}`);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+                const geojson = await response.json();
+                
+                households = geojson.features || [];
+                
+                // Populate household select with HH-ID format
+                const householdSelect = document.getElementById('householdSelect');
+                householdSelect.innerHTML = '<option value="">Select a household...</option>';
+                
+                households.forEach((feature, index) => {
+                    const option = document.createElement('option');
+                    const props = feature.properties;
+                    const hhId = props.id || `HH-${String(index).padStart(5, '0')}`;
+                    const amount = props.ect_amount || 0;
+                    option.value = index;
+                    option.textContent = `${hhId} (${props.barangay} - ₱${amount.toLocaleString()})`;
+                    householdSelect.appendChild(option);
+                });
+                
+                householdSelect.disabled = false;
+                document.getElementById('smsBtn').disabled = false;
+                
+                // Add markers to map
+                geojson.features.forEach(feature => {
+                    const [lng, lat] = feature.geometry.coordinates;
+                    const props = feature.properties;
+                    
+                    const marker = L.circleMarker([lat, lng], {
+                        radius: 8,
+                        fillColor: props.marker_color,
+                        color: '#fff',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    }).addTo(map);
+                    
+                    marker.bindPopup(props.popup_content);
+                    markers.push(marker);
+                });
+                
+                // Fit map to show all markers
+                if (geojson.features && geojson.features.length > 0) {
+                    const bounds = geojson.features.map(f => [f.geometry.coordinates[1], f.geometry.coordinates[0]]);
+                    if (bounds.length > 0) {
+                        map.fitBounds(bounds, { padding: [50, 50] });
+                    }
+                    showStatus(`Loaded ${geojson.features.length} household(s)`, 'success');
+                } else {
+                    showStatus('No households found for this disaster', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading households:', error);
+                showStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Generate SMS using Gemini API
+        async function generateSMS() {
+            const householdIndex = document.getElementById('householdSelect').value;
+            
+            if (householdIndex === '') {
+                showStatus('Please select a household first', 'error');
+                return;
+            }
+            
+            const household = households[householdIndex];
+            const props = household.properties;
+            
+            // Prepare data for Gemini API
+            const prompt = `You are a DSWD (Department of Social Welfare and Development) agent. Generate a compassionate, professional SMS message in Filipino/Tagalog to inform a household about their Emergency Cash Transfer (ECT) allocation.
+
+Household Information:
+- Name: ${props.name}
+- Address: ${props.address}
+- Damage Status: ${props.damage_status}
+- ECT Amount: ₱${props.ect_amount.toLocaleString()}
+
+Requirements:
+1. Be empathetic and professional
+2. Use Filipino/Tagalog language
+3. Keep it under 160 characters if possible
+4. Include the ECT amount clearly
+5. Provide next steps or contact information
+
+Generate the SMS message:`;
+            
+            try {
+                showStatus('Generating SMS with Gemini AI...', 'success');
+                
+                // Call Gemini API
+                const response = await fetch('/api/generate-sms/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        household_name: props.name,
+                        damage_status: props.damage_status,
+                        ect_amount: props.ect_amount
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('smsContent').textContent = data.sms_message;
+                    document.getElementById('smsPreview').style.display = 'block';
+                    showStatus('SMS generated successfully!', 'success');
+                } else {
+                    throw new Error(data.error || 'Failed to generate SMS');
+                }
+            } catch (error) {
+                console.error('Error generating SMS:', error);
+                showStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Show status message
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.textContent = message;
+            statusDiv.className = `status-message ${type}`;
+            statusDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Run ML Assessment
+        async function runML() {
+            const disasterId = document.getElementById('disasterSelect').value;
+            
+            if (!disasterId) {
+                showStatus('Please select a disaster first', 'error');
+                return;
+            }
+            
+            // Show loading state
+            const mlBtn = document.getElementById('mlBtn');
+            const originalText = mlBtn.textContent;
+            mlBtn.disabled = true;
+            mlBtn.textContent = '⏳ Running AI...';
+            
+            try {
+                showStatus('Running AI assessment with CatBoost ML...', 'success');
+                
+                // Clear existing markers
+                markers.forEach(marker => map.removeLayer(marker));
+                markers = [];
+                
+                // Fetch ML predictions
+                const response = await fetch(`/api/ml/predict/?disaster_id=${disasterId}`);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.length === 0) {
+                    showStatus('No households found for ML assessment', 'error');
+                    return;
+                }
+                
+                // Update households array
+                households = data.map(h => ({
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: [h.lon, h.lat]
+                    },
+                    properties: {
+                        id: h.household_id,
+                        name: h.household_name,
+                        barangay: h.barangay,
+                        damage_status: h.damage_status,
+                        ect_amount: h.ect_amount,
+                        sms: h.sms
+                    }
+                }));
+                
+                // Add markers with ML predictions
+                let totalBudget = 0;
+                data.forEach(h => {
+                    const color = h.ect_amount === 10000 ? 'red' : h.ect_amount === 5000 ? 'orange' : 'green';
+                    
+                    const marker = L.circleMarker([h.lat, h.lon], {
+                        radius: 10,
+                        fillColor: color,
+                        color: '#fff',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    }).addTo(map);
+                    
+                    marker.bindPopup(`
+                        <strong>${h.household_id}</strong><br>
+                        ${h.household_name}<br>
+                        <strong>Barangay:</strong> ${h.barangay}<br>
+                        <strong>ECT Amount:</strong> ₱${h.ect_amount.toLocaleString()}<br>
+                        <strong>Flood Depth:</strong> ${h.flood_depth}m<br>
+                        <strong>4Ps:</strong> ${h.is_4ps ? 'Yes' : 'No'}<br>
+                        <hr>
+                        <strong>SMS:</strong><br>
+                        <em>${h.sms}</em>
+                    `);
+                    
+                    markers.push(marker);
+                    totalBudget += h.ect_amount;
+                });
+                
+                // Fit map to show all markers
+                if (data.length > 0) {
+                    const bounds = data.map(h => [h.lat, h.lon]);
+                    map.fitBounds(bounds, { padding: [50, 50] });
+                }
+                
+                // Show SMS output
+                if (data.length > 0) {
+                    document.getElementById('smsOutputText').textContent = data[0].sms;
+                    document.getElementById('sms-output').style.display = 'block';
+                }
+                
+                // Populate household dropdown with HH-ID format
+                const householdSelect = document.getElementById('householdSelect');
+                householdSelect.innerHTML = '<option value="">Select a household...</option>';
+                data.forEach((h, index) => {
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = `${h.household_id} (${h.barangay} - ₱${h.ect_amount.toLocaleString()})`;
+                    householdSelect.appendChild(option);
+                });
+                householdSelect.disabled = false;
+                
+                // Store households for SMS generation
+                households = data.map(h => ({
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: [h.lon, h.lat]
+                    },
+                    properties: {
+                        id: h.household_id,
+                        name: h.household_name,
+                        barangay: h.barangay,
+                        damage_status: h.damage_status,
+                        ect_amount: h.ect_amount,
+                        sms: h.sms
+                    }
+                }));
+                
+                showStatus(`AI Assessment complete! ${data.length} households assessed. Total budget: ₱${totalBudget.toLocaleString()}`, 'success');
+                
+                // Load and display budget summary
+                loadBudgetSummary(disasterId);
+                
+                // Enable export button
+                document.getElementById('exportBtn').disabled = false;
+                
+                // Restore button
+                mlBtn.disabled = false;
+                mlBtn.textContent = originalText;
+                
+            } catch (error) {
+                console.error('Error running ML assessment:', error);
+                showStatus(`Error: ${error.message}`, 'error');
+                // Restore button on error
+                mlBtn.disabled = false;
+                mlBtn.textContent = originalText;
+            }
+        }
+        
+        // Budget pie chart instance
+        let budgetChart = null;
+        
+        // Load Budget Summary
+        async function loadBudgetSummary(disasterId) {
+            try {
+                const response = await fetch(`/api/budget/summary/?disaster_id=${disasterId}`);
+                if (!response.ok) return;
+                
+                const data = await response.json();
+                
+                // Create pie chart
+                const ctx = document.getElementById('budgetPieChart').getContext('2d');
+                
+                // Destroy existing chart if it exists
+                if (budgetChart) {
+                    budgetChart.destroy();
+                }
+                
+                // Prepare chart data
+                const chartData = {
+                    labels: ['Total Damage (₱10K)', 'Partial Damage (₱5K)', 'No Damage (₱0)'],
+                    datasets: [{
+                        data: [
+                            data.by_status.TOTAL * 10000,
+                            data.by_status.PARTIAL * 5000,
+                            data.by_status.NONE * 0
+                        ],
+                        backgroundColor: ['#d73027', '#f46d43', '#1a9850'],
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                };
+                
+                budgetChart = new Chart(ctx, {
+                    type: 'pie',
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    font: { size: 10 },
+                                    padding: 8
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const label = context.label || '';
+                                        const value = context.parsed || 0;
+                                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                        const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                        return `${label}: ₱${value.toLocaleString()} (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                // Build budget summary HTML
+                let html = `
+                    <div style="margin-bottom: 10px;">
+                        <strong>Total Budget:</strong> ₱${data.total_budget.toLocaleString()}<br>
+                        <strong>Households:</strong> ${data.total_households}<br>
+                        <strong>Average per Household:</strong> ₱${data.average_per_household.toLocaleString()}<br>
+                        <strong>4Ps Recipients:</strong> ${data.total_4ps}
+                    </div>
+                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #81c784;">
+                        <strong>By Damage Status:</strong><br>
+                        • Total Damage: ${data.by_status.TOTAL} (₱${(data.by_status.TOTAL * 10000).toLocaleString()})<br>
+                        • Partial Damage: ${data.by_status.PARTIAL} (₱${(data.by_status.PARTIAL * 5000).toLocaleString()})<br>
+                        • No Damage: ${data.by_status.NONE}
+                    </div>
+                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #81c784;">
+                        <strong>By Barangay:</strong><br>
+                `;
+                
+                for (const [brgy, stats] of Object.entries(data.by_barangay)) {
+                    html += `• ${brgy}: ${stats.count} households (₱${stats.budget.toLocaleString()})<br>`;
+                }
+                
+                html += `</div>`;
+                
+                document.getElementById('budget-content').innerHTML = html;
+                document.getElementById('budget-summary').style.display = 'block';
+            } catch (error) {
+                console.error('Error loading budget summary:', error);
+            }
+        }
+        
+        // Export to CSV
+        async function exportToCSV() {
+            const disasterId = document.getElementById('disasterSelect').value;
+            
+            if (!disasterId) {
+                showStatus('Please select a disaster first', 'error');
+                return;
+            }
+            
+            try {
+                window.location.href = `/api/export/csv/?disaster_id=${disasterId}`;
+                showStatus('Exporting CSV...', 'success');
+            } catch (error) {
+                showStatus(`Export error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Initialize on page load
+        loadDisasters();
+    </script>
+</body>
+</html>
+
